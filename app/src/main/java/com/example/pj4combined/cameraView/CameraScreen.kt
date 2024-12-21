@@ -49,10 +49,19 @@ fun CameraScreen() {
     val lifecycleOwner = LocalLifecycleOwner.current
     val detectionResults = remember { mutableStateOf<DetectionResult?>(null) }
     val errorMessage = remember { mutableStateOf<String?>(null) }
+    // ADDED
+    val inferenceTimes = remember { mutableStateOf(mutableListOf<Long>()) }
+    val averageInferenceTime = remember { mutableStateOf(0L) }
 
     val listener = remember {
         DetectorListener(
-            onDetectionResult = { results -> detectionResults.value = results },
+            onDetectionResult = { results ->
+                detectionResults.value = results
+                results?.let {
+                    inferenceTimes.value.add(it.inferenceTime)
+                    // Calculate average inference time
+                    averageInferenceTime.value = inferenceTimes.value.average().toLong()
+                } },
             onDetectionError = { error -> errorMessage.value = error }
         )
     }
@@ -100,19 +109,29 @@ fun CameraScreen() {
         )
         Log.d("CS330", "Camera bound")
     }
+    Log.d("CS330","Average inference time: ${averageInferenceTime.value} ms\n")
 
     if (detectionResults.value != null) {
         // TODO:
         //  Choose your inference time threshold
-        val inferenceTimeThreshold = 200000
+        val inferenceTimeThreshold = 150 // 200000
 
         if (detectionResults.value!!.inferenceTime > inferenceTimeThreshold) {
             Log.d("CS330", "GPU too slow, switching to CPU start")
             // TODO:
             //  Create new classifier to be run on CPU with 2 threads
+            val personClassifierCPU = PersonClassifier()
+            personClassifierCPU.initialize(context, useGPU = false, threadNumber = 2)
+            personClassifierCPU.setDetectorListener(listener)
+
 
             // TODO:
             //  Set imageAnalyzer to use the new classifier
+            imageAnalyzer.setAnalyzer(cameraExecutor) { image ->
+                detectObjects(image, personClassifierCPU)
+                // Close the image proxy
+                image.close()
+            }
 
             Log.d("CS330", "GPU too slow, switching to CPU done")
         }
